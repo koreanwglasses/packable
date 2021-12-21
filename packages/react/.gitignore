@@ -1,0 +1,7 @@
+# Build/Install Artifacts
+
+/dist
+
+# Testing
+
+*.local.*

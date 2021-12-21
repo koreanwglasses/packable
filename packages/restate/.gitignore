@@ -1,0 +1,16 @@
+# Build/Install Artifacts
+
+/dist
+/node
+/core
+/tsconfig.tsbuildinfo
+
+/client/*
+!/client/package.json
+
+/server/*
+!/server/package.json
+
+# Testing
+
+*.local.*

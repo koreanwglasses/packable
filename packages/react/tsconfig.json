@@ -1,0 +1,7 @@
+{
+  "extends": "@koreanwglasses/restate",
+  "compilerOptions": {
+    "outDir": "dist", 
+    "jsx": "react"
+  }
+}

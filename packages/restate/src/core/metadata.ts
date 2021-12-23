@@ -1,10 +1,10 @@
 import { RESTATE_META_KEY } from "./lib/consts";
-import { RestateMeta } from "./lib/types";
+import { PackOptions } from "./lib/types";
 import { DEFAULT } from "./policies";
 
 /** @internal */
 export const getRestateMeta = (target: any) => {
-  if (!(RESTATE_META_KEY in target)) {
+  if (!Reflect.ownKeys(target).includes(RESTATE_META_KEY)) {
     Object.defineProperty(target, RESTATE_META_KEY, {
       value: {},
       enumerable: false,
@@ -32,7 +32,7 @@ export const getKeysToPack = (target: any): Set<string | symbol> => {
 export const getPackOptions = (
   target: any,
   key: string | symbol = ""
-): RestateMeta => {
+): PackOptions => {
   if (!target) return { evaluate: false, policy: DEFAULT };
 
   const protoMeta = getPackOptions(Reflect.getPrototypeOf(target), key);

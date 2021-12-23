@@ -10,7 +10,7 @@ const getRefId = (target: any) =>
 
 export const pack = (
   client: Client,
-  target: object,
+  target: unknown,
   refs: any = {}
 ): Cascade<Packed> => {
   return Cascade.$({ target })
@@ -21,14 +21,14 @@ export const pack = (
       ) {
         // Check if client has access to object
         const { policy } = getPackOptions($.target);
-        return Cascade.$({ ...$ })
-          .$({ clientHasAccess: policy(client, $.target) })
+        return $({ clientHasAccess: policy(client, $.target) })
           .$(($) => {
             if (!$.clientHasAccess) return $({ target: undefined });
-            else return $({});
+            return $({}); // Type safety
           })
           .$({ clientHasAccess: undefined });
       }
+      return $({}); // Type safety
     })
     .$(({ target }) => {
       // Recursively pack value
@@ -76,7 +76,7 @@ export const pack = (
             .$(($) => {
               // Get value
               if (!$.clientHasAccess) return $({ value: undefined });
-              
+
               const value = (target as any)[key];
 
               // Compute the packed result, depending on whether
@@ -126,5 +126,5 @@ export const pack = (
         return { result: target, refs };
       }
     })
-    .p(stripUndefined);
+    .pipe(stripUndefined);
 };

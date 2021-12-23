@@ -45,7 +45,7 @@ export const isPackedCallable = (target: unknown): target is PackedCallable => {
 };
 
 /** @internal */
-export interface RestateMeta {
+export interface PackOptions {
   policy: Policy<any>;
   evaluate: boolean;
   clientParamIndex?: number;

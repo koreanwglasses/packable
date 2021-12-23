@@ -2,7 +2,7 @@
 export const stripUndefined = (target: any): any => {
   if (Array.isArray(target)) {
     return target.map((v) =>
-      typeof v === "undefined" ? null : stripUndefined(target)
+      typeof v === "undefined" ? null : stripUndefined(v)
     );
   } else if (
     target &&

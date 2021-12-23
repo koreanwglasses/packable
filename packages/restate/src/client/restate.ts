@@ -41,9 +41,10 @@ export default function RestateClient(
   opts_?: RestateClientOpts
 ) {
   // Parse out overloaded params
-  const [host, { socket: _socket, init, dev = false }] = opts_
-    ? [host_opts as string, opts_]
-    : ["", host_opts as RestateClientOpts];
+  const [host, { socket: _socket, init, dev = false }] =
+    typeof host_opts === "string"
+      ? [host_opts, opts_ ?? {}]
+      : ["", host_opts as RestateClientOpts];
 
   const debug = (...args: any) => {
     if (dev) console.log(...args);
@@ -165,7 +166,7 @@ export default function RestateClient(
 
   // Fetch + unpack (i.e. hydrate) data
   const resolve = <T>(path: string, ...params: any[]) =>
-    remote(path, ...params).p(
+    remote(path, ...params).pipe(
       (packed) => unpack(path, packed, remote) as T,
       true
     );

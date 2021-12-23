@@ -177,7 +177,7 @@ export class RestateServer {
     });
 
     const pipe = cascade
-      .p((value) => {
+      .pipe((value) => {
         debug(`> Sending diff ${devDebugInfo}`);
 
         const diff = jsonpatch.compare(lastPacked, { value });
@@ -244,7 +244,7 @@ export class RestateServer {
         const packed = pack(client, result);
 
         // Get the first value
-        const next = await packed.next(true);
+        const next = await packed.get(true);
 
         if (result instanceof Volatile || Object.values(next.refs).length) {
           // Open a pipe to socket if result is volatile or has refs that can change

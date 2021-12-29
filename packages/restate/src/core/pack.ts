@@ -4,48 +4,50 @@ import { stripUndefined } from "./lib/strip-undefined";
 import { Client, Packed } from "./lib/types";
 import { getKeysToPack, getPackOptions, getRestateMeta } from "./metadata";
 
-/** @internal */
 const getRefId = (target: any) =>
   (getRestateMeta(target).__ref_id ??= nanoid());
 
+type Refs = Record<string, unknown>;
+
 export const pack = (
   client: Client,
-  target: unknown,
-  refs: any = {}
+  target: any,
+  _refs: Refs = {}, // Internal, used for keeping track of refs when recursing
+  _isAction = false // Internal, used to keep track of decorated functions
 ): Cascade<Packed> => {
-  return Cascade.$({ target })
-    .$(($) => {
+  return Cascade.resolve(target)
+    .pipe((target) => {
       if (
-        $.target &&
-        (typeof $.target === "object" || typeof $.target === "function")
+        target &&
+        (typeof target === "object" || typeof target === "function")
       ) {
         // Check if client has access to object
-        const { policy } = getPackOptions($.target);
-        return $({ clientHasAccess: policy(client, $.target) })
-          .$(($) => {
-            if (!$.clientHasAccess) return $({ target: undefined });
-            return $({}); // Type safety
-          })
-          .$({ clientHasAccess: undefined });
+        const { policy } = getPackOptions(target);
+        return Cascade.resolve(policy(client, target)).pipe((clientHasAccess) =>
+          clientHasAccess ? target : undefined
+        );
+      } else {
+        return target;
       }
-      return $({}); // Type safety
     })
-    .$(({ target }) => {
+    .pipe((target) => {
       // Recursively pack value
       if (Array.isArray(target)) {
-        return target.reduce<Cascade<{ result: any[]; refs: any }>>(
-          (acc, value) =>
-            acc
-              .$(($) => $({ packed: pack(client, value, $.refs) }))
-              .$(($) =>
-                $({
-                  result: [...$.result, $.packed.result],
-                  refs: $.packed.refs,
-                })
-              )
-              .$({ packed: undefined }),
-          Cascade.$({ result: [], refs })
-        );
+        return target
+          .reduce<Cascade<[result: unknown[], refs: Refs]>>(
+            (acc, value) =>
+              acc
+                .pipeAll(
+                  ([result, refs]) =>
+                    [result, pack(client, value, refs)] as const
+                )
+                .pipeAll(([result, packed]) => [
+                  [...result, packed.result],
+                  packed.refs,
+                ]),
+            Cascade.all([[], _refs])
+          )
+          .pipe(([result, refs]) => ({ result, refs }));
       } else if (
         target &&
         (typeof target === "object" || typeof target === "function")
@@ -53,77 +55,59 @@ export const pack = (
         const __ref_id = getRefId(target);
 
         // Skip packing if target is already packed
-        if (__ref_id in refs)
+        if (__ref_id in _refs)
           return {
             result: { __ref_id },
-            refs,
+            refs: _refs,
           };
 
-        let packed = Cascade.$({
-          result: {} as any,
-          refs: { ...refs, [__ref_id]: {} },
-        });
+        let packed = Cascade.all([{}, { ..._refs, [__ref_id]: {} }] as const);
 
         for (const key of getKeysToPack(target)) {
-          const { evaluate, policy, clientParamIndex } = getPackOptions(
-            target,
-            key
-          );
+          const { policy, isGetter, isAction } = getPackOptions(target, key);
 
           packed = packed
-            // Check permissions
-            .$({ clientHasAccess: policy(client, target, key) })
-            .$(($) => {
-              // Get value
-              if (!$.clientHasAccess) return $({ value: undefined });
-
-              const value = (target as any)[key];
-
-              // Compute the packed result, depending on whether
-              // the field is a property, accessor, or method
-              if (evaluate && typeof value === "function") {
-                // Evaluate function before packing
-                let args = [];
-                if (typeof clientParamIndex === "number") {
-                  args = new Array(clientParamIndex + 1).fill(undefined);
-                  args[clientParamIndex] = client;
-                }
-                return $({ value: value.apply(target, args) });
-              } else {
-                // Field is accessor
-                return $({ value });
-              }
-            })
-            .$(($) => $({ packed: pack(client, $.value, $.refs) }))
-            .$(($) =>
-              $({
-                result: { ...$.result, [key]: $.packed.result },
-                refs: $.packed.refs,
-              })
+            .pipeAll(
+              ([result, refs]) =>
+                // Check permissions
+                [result, refs, policy(client, target, key)] as const
             )
-            .$({
-              clientHasAccess: undefined,
-              value: undefined,
-              packed: undefined,
-            });
+            .pipeAll(([result, refs, clientHasAccess]) => {
+              if (!clientHasAccess) return [result, refs, undefined];
+
+              return [
+                result,
+                refs,
+                isGetter ? target[key](client) : target[key],
+              ];
+            })
+            .pipeAll(
+              ([result, refs, value]) =>
+                [result, pack(client, value, refs, isAction)] as const
+            )
+            .pipeAll(([result, packed]) => [
+              { ...result, [key]: packed.result },
+              packed.refs,
+            ]);
         }
 
-        return packed.$(($) => ({
+        return packed.pipe(([result, refs]) => ({
           result: { __ref_id },
           refs: {
-            ...$.refs,
+            ...refs,
             [__ref_id]:
               typeof target === "function"
                 ? {
                     __isCallable: true,
-                    value: $.result,
+                    __isAction: _isAction,
+                    properties: result,
                   }
-                : $.result,
+                : result,
           },
         }));
       } else {
         // If value is primitive, return as is
-        return { result: target, refs };
+        return { result: target, refs: _refs };
       }
     })
     .pipe(stripUndefined);

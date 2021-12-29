@@ -1,11 +1,11 @@
-import { Cascade, Volatile } from "@koreanwglasses/cascade";
+import { Cascade } from "@koreanwglasses/cascade";
 import asyncHandler from "express-async-handler";
 import express, { Request, Response, Router } from "express";
 import { Server, Namespace } from "socket.io";
 import hash from "object-hash";
 import jsonpatch from "fast-json-patch";
 import { nanoid } from "nanoid";
-import { Client, pack } from "../core";
+import { Client, pack, PackOptions } from "../core";
 import {
   KW_CLOSE_FROM_CLIENT,
   DEFAULT_SIO_NAMESPACE,
@@ -59,100 +59,100 @@ export class RestateServer {
    */
   private async resolve(
     client: Client,
-    target: unknown,
+    target: any,
     path: string[] = [],
-    i = 0,
-    ...params: any
+    params: any[],
+    _debugPath = ""
   ): Promise<any> {
-    if (target instanceof Volatile)
-      return Cascade.$({ target }).$(({ target }) =>
-        this.resolve(client, target, path, i, ...params)
+    if (target instanceof Cascade)
+      return Cascade.resolve(target).pipe((target) =>
+        this.resolve(client, target, path, params, _debugPath)
       );
 
     const isObject = target && typeof target === "object";
     const isFunction = typeof target === "function";
 
-    if (i < path.length) {
-      if (isObject || isFunction) {
-        const key = path[i];
+    // Check permissions
+    if (isObject || isFunction) {
+      const { policy } = getPackOptions(target);
+      const clientHasAccess = await Cascade.resolve(
+        policy(client, target)
+      ).get();
 
-        if (!(key in target))
-          throw NOT_FOUND(
-            `Failed to resolve resource at ${join(
-              ...path.slice(0, i + 1)
-            )}: Resource does not exist`
-          );
-
-        // Check access
-        const { policy: resourcePolicy } = getPackOptions(target);
-        const { policy: fieldPolicy, clientParamIndex } = getPackOptions(
-          target,
-          key
-        );
-
-        const clientHasAccess =
-          (await Cascade.flatten(resourcePolicy(client, target)).next()) &&
-          (await Cascade.flatten(fieldPolicy(client, target, key)).next());
-
-        if (!clientHasAccess)
-          throw FORBIDDEN(
-            `You are not allowed to access ${join(...path.slice(0, i + 1))}`
-          );
-
-        // Insert client into params at the specified index this resolves to
-        // a function call
-        let _params = params;
-        if (i === path.length - 1 && typeof clientParamIndex === "number") {
-          while (_params.length < clientParamIndex) _params.push(undefined);
-          _params[clientParamIndex] = client;
-        }
-
-        // Resolve next piece
-        const nextTarget = (target as any)[key];
-        return await this.resolve(
-          client,
-          typeof nextTarget === "function"
-            ? nextTarget.bind(target)
-            : nextTarget,
-          path,
-          i + 1,
-          ..._params
-        );
-      }
-    } else {
-      if (isObject || isFunction) {
-        // Make sure client has access to resource
-        const { policy } = getPackOptions(target);
-
-        if (!(await Cascade.flatten(policy(client, target)).next())) {
-          throw FORBIDDEN(`You are not allowed to access ${join(...path)}`);
-        }
-      }
-
-      if (isFunction) {
-        try {
-          return await target(...params);
-        } catch (e) {
-          if (
-            e instanceof TypeError &&
-            /^Class constructor ([a-zA-Z_$][0-9a-zA-Z_$]*) cannot be invoked without 'new'$/.test(
-              e.message.split("\n")[0]
-            )
-          ) {
-            // Handle the specific case where function is actually a class
-            return target;
-          } else {
-            throw e;
-          }
-        }
-      } else {
-        return target;
-      }
+      if (!clientHasAccess)
+        throw FORBIDDEN(`You do not have access to ${join(_debugPath)}`);
     }
 
-    throw NOT_FOUND(
-      `Failed to resolve resource at ${join(...path.slice(0, i + 1))}`
-    );
+    if (path.length === 0) {
+      // Fully resolved. Return target
+      return target;
+    }
+
+    // Parse remaining path
+    if (isObject || isFunction) {
+      const key = path[0];
+
+      if (!(key in target)) {
+        throw NOT_FOUND(
+          `Failed to resolve resource at ${join(
+            _debugPath,
+            key
+          )}: Resource does not exist`
+        );
+      }
+
+      // Check access
+      const { policy, clientIn, isGetter } = getPackOptions(target, key);
+
+      const clientHasAccess = await Cascade.resolve(
+        policy(client, target, key)
+      ).get();
+
+      if (!clientHasAccess)
+        throw FORBIDDEN(`You do not have access to ${join(_debugPath, key)}`);
+
+      // Resolve next piece
+      let nextTarget = target[key];
+      if (typeof nextTarget === "function") {
+        if (isGetter) {
+          // If next target is a getter, evalute and continue resolving
+          nextTarget = await target[key](client);
+        } else if (path.length === 1) {
+          // If next target is a function and the end of the path has been reached,
+          // invoke the function on the target (ensures the function's `this` is
+          // properly bound)
+
+          // Add client to params (if specified) and attempt to call function
+          // (may fail if function is a constructor)
+          if (typeof clientIn === "number") {
+            while (params.length <= clientIn) params.push(undefined);
+            params[clientIn] = client;
+          }
+
+          try {
+            return await target[key](...params);
+          } catch (e) {
+            if (e instanceof TypeError) {
+              // We may have tried to invoke a non-callable constructor
+              // Until there's a better way to tell, we'll just carry on
+              // assuming its a class.
+            } else {
+              throw e;
+            }
+          }
+        }
+      }
+
+      return await this.resolve(
+        client,
+        nextTarget,
+        path.splice(1),
+        params,
+        join(_debugPath, key)
+      );
+    }
+
+    throw NOT_FOUND(`Failed to resolve resource at ${_debugPath}`);
   }
 
   private pipeToSocket(req: Request, cascade: Cascade<any>) {
@@ -236,17 +236,23 @@ export class RestateServer {
           ? JSON.parse((req.query.params as string) ?? "[]")
           : req.body.params ?? [];
 
-      const result = await this.resolve(client, target, path, 0, ...params);
+      const result = await this.resolve(
+        client,
+        target,
+        path,
+        params,
+        req.baseUrl
+      );
 
-      // Use sockets to stream data from Cascade, if possible
+      // Use sockets to stream data if result is Cascade
       const socketId = req.query[SOCKET_ID_KEY];
       if (typeof socketId === "string") {
         const packed = pack(client, result);
 
         // Get the first value
-        const next = await packed.get(true);
+        const next = await packed.get();
 
-        if (result instanceof Volatile || Object.values(next.refs).length) {
+        if (result instanceof Cascade || Object.values(next.refs).length) {
           // Open a pipe to socket if result is volatile or has refs that can change
           const pipe = this.pipeToSocket(req, packed);
           res.send({
@@ -262,10 +268,13 @@ export class RestateServer {
           });
         }
       } else {
-        res.send(result);
+        res.send(await Cascade.resolve(result).get({ keepAlive: false }));
       }
     } catch (e) {
-      console.error(`Error while handling request for ${req.url}:`, e);
+      console.error(
+        `Error while handling request for ${req.originalUrl.split("?")[0]}:`,
+        e
+      );
       if (e instanceof Error) {
         res.statusCode = (e as any).code ?? 500;
         if (DEV) res.send(`${e.stack}`);

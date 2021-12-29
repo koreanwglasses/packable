@@ -1,5 +1,8 @@
 {
   "packageManager": "yarn@3.1.1",
+  "scripts": {
+    "build-all": "yarn workspaces "
+  },
   "workspaces": [
     "examples/*",
     "packages/*"

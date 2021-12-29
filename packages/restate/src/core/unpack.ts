@@ -1,10 +1,10 @@
-import { isPackedCallable, isPackedRef, Packed } from ".";
+import { isPackedCallable, isPackedRef, Packed, Unpacked } from ".";
 import { join } from "./lib/join";
 
 export const unpack = <T = any>(
   path: string,
   packed: Packed,
-  remote: (path: string, ...args: any) => any
+  remote: (path: string, params: any[], opts: { subscribe: boolean }) => any
 ) => {
   const link = (
     path: string,
@@ -22,8 +22,9 @@ export const unpack = <T = any>(
       return {
         get value() {
           return Object.assign(
-            remote.bind(null, path),
-            link(path, result.value).value
+            (...params: any[]) =>
+              remote(path, params, { subscribe: !result.__isAction }),
+            link(path, result.properties).value
           );
         },
         lazy: true,
@@ -65,5 +66,5 @@ export const unpack = <T = any>(
     return { value: result, lazy: false };
   };
 
-  return link(path, packed.result).value as T;
+  return link(path, packed.result).value as Unpacked<T>;
 };

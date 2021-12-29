@@ -15,6 +15,23 @@ export interface Packed {
   refs: Record<string, any>;
 }
 
+export type Unpacked<T> = T extends Promise<infer S> | Cascade<infer S>
+  ? Unpacked<S>
+  : T extends (infer S)[]
+  ? Unpacked<S>[]
+  : T extends Record<any, any>
+  ? {
+      [K in keyof T]: Unpacked<T[K]>;
+    } & (T extends (...args: any) => any ? T : unknown)
+  : T;
+export type Got<T, Keys> = {
+  [K in keyof T]: K extends Keys
+    ? T[K] extends (...args: any) => infer R
+      ? R
+      : never
+    : T[K];
+};
+
 /** @internal */
 export interface PackedRef {
   __ref_id: number;
@@ -32,7 +49,8 @@ export const isPackedRef = (target: unknown): target is PackedRef => {
 /** @internal */
 export interface PackedCallable {
   __isCallable: true;
-  value: any;
+  __isAction: boolean;
+  properties: any;
 }
 
 /** @internal */
@@ -47,6 +65,7 @@ export const isPackedCallable = (target: unknown): target is PackedCallable => {
 /** @internal */
 export interface PackOptions {
   policy: Policy<any>;
-  evaluate: boolean;
-  clientParamIndex?: number;
+  isGetter: boolean;
+  isAction: boolean;
+  clientIn?: number;
 }

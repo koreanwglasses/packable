@@ -19,7 +19,7 @@
     "typescript": "^4.5.2"
   },
   "dependencies": {
-    "@koreanwglasses/cascade": "0.5.11",
+    "@koreanwglasses/cascade": "workspace:^",
     "@koreanwglasses/restate": "workspace:^",
     "deep-is": "^0.1.4"
   },

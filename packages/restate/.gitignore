@@ -10,7 +10,3 @@
 
 /server/*
 !/server/package.json
-
-# Testing
-
-*.local.*

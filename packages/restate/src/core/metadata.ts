@@ -8,6 +8,7 @@ export const getRestateMeta = (target: any) => {
     Object.defineProperty(target, RESTATE_META_KEY, {
       value: {},
       enumerable: false,
+      writable: true,
     });
   }
 
@@ -22,7 +23,7 @@ export const getKeysToPack = (target: any): Set<string | symbol> => {
   const ownKeys = Reflect.ownKeys(target).filter(
     (key) =>
       Reflect.getOwnPropertyDescriptor(target, key)?.enumerable ||
-      getRestateMeta(target)[`.${key.toString()}`]
+      getRestateMeta(target).properties?.[key]
   );
 
   return new Set([...protoKeys, ...ownKeys]);
@@ -33,10 +34,10 @@ export const getPackOptions = (
   target: any,
   key: string | symbol = ""
 ): PackOptions => {
-  if (!target) return { evaluate: false, policy: DEFAULT };
+  if (!target) return { policy: DEFAULT, isGetter: false, isAction: false };
 
   const protoMeta = getPackOptions(Reflect.getPrototypeOf(target), key);
-  const ownMeta = getRestateMeta(target)[`.${key.toString()}`] ?? {};
+  const ownMeta = getRestateMeta(target).properties?.[key] ?? {};
   const meta = { ...protoMeta, ...ownMeta };
 
   return meta;

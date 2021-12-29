@@ -10,11 +10,6 @@ export interface Policy<T> {
     | boolean;
 }
 
-export interface Packed {
-  result: any;
-  refs: Record<string, any>;
-}
-
 export type Unpacked<T> = T extends Promise<infer S> | Cascade<infer S>
   ? Unpacked<S>
   : T extends (infer S)[]
@@ -24,13 +19,30 @@ export type Unpacked<T> = T extends Promise<infer S> | Cascade<infer S>
       [K in keyof T]: Unpacked<T[K]>;
     } & (T extends (...args: any) => any ? T : unknown)
   : T;
-export type Got<T, Keys> = {
+
+export type WithViews<T, Keys> = {
   [K in keyof T]: K extends Keys
     ? T[K] extends (...args: any) => infer R
       ? R
       : never
     : T[K];
 };
+
+/** @internal */
+export interface RestateMetadata {
+  policy: Policy<any>;
+  isView: boolean;
+  isAction: boolean;
+  clientIn?: number;
+  pack?: boolean;
+  refId?: string;
+}
+
+/** @internal */
+export interface Packed {
+  result: any;
+  refs: Record<string, Ref>;
+}
 
 /** @internal */
 export interface PackedRef {
@@ -47,25 +59,17 @@ export const isPackedRef = (target: unknown): target is PackedRef => {
 };
 
 /** @internal */
-export interface PackedCallable {
-  __isCallable: true;
-  __isAction: boolean;
-  properties: any;
+export type Ref = ObjectRef | CallableRef;
+
+/** @internal */
+export interface ObjectRef {
+  isCallable?: false;
+  properties: Record<any, unknown>;
 }
 
 /** @internal */
-export const isPackedCallable = (target: unknown): target is PackedCallable => {
-  return (
-    !!target &&
-    (typeof target === "object" || typeof target === "function") &&
-    (target as PackedCallable).__isCallable
-  );
-};
-
-/** @internal */
-export interface PackOptions {
-  policy: Policy<any>;
-  isGetter: boolean;
-  isAction: boolean;
-  clientIn?: number;
+export interface CallableRef {
+  isCallable: true;
+  properties: Record<any, unknown>;
 }
+

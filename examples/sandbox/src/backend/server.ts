@@ -3,7 +3,7 @@ import MongoDBStoreFactory from "connect-mongodb-session";
 import { uri } from "./database";
 import next from "next";
 import express from "express";
-import expressSession from "express-session";
+import expressSession, { Session } from "express-session";
 import iosession from "express-socket.io-session";
 import { Server as IO } from "socket.io";
 import { App } from "../resources/app";
@@ -39,7 +39,7 @@ io.of("/restate.io").on("connect", (socket) => {
 
   socket.on("disconnect", () => {
     const session = (socket.handshake as any).session;
-    if (session?.userId && Object.values(session?.sockets).length === 0) {
+    if (session?.userId) {
       new User(session.userId)._disconnect(Date.now());
     }
   });
@@ -47,13 +47,13 @@ io.of("/restate.io").on("connect", (socket) => {
 
 declare module "@koreanwglasses/restate" {
   interface Client {
-    sid: string;
+    session: Session;
   }
 }
 
 const restate = new RestateServer({
   server: io,
-  makeClient: (req) => ({ sid: req.session?.id }),
+  makeClient: (req) => ({ session: req.session }),
 });
 
 app.use("/api/app", restate.serve(App));

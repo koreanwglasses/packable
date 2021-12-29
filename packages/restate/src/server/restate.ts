@@ -5,7 +5,7 @@ import { Server, Namespace } from "socket.io";
 import hash from "object-hash";
 import jsonpatch from "fast-json-patch";
 import { nanoid } from "nanoid";
-import { Client, pack, PackOptions } from "../core";
+import { Client } from "../core";
 import {
   KW_CLOSE_FROM_CLIENT,
   DEFAULT_SIO_NAMESPACE,
@@ -17,11 +17,12 @@ import {
   KW_VALUE,
   KW_CASCADE_ID,
   KW_CLOSE_FROM_SERVER,
-} from "../core/lib/consts";
+} from "../core/consts";
 import { BAD_REQUEST, FORBIDDEN, NOT_FOUND, NOT_IMPLEMENTED } from "./errors";
 import { join } from "../core/lib/join";
-import { getPackOptions } from "../core/metadata";
+import { getRestateMetadata } from "../core/metadata";
 import "colors";
+import { pack } from "../core/pack";
 
 const DEV = process.env.NODE_ENV === "development";
 
@@ -63,18 +64,25 @@ export class RestateServer {
     path: string[] = [],
     params: any[],
     _debugPath = ""
-  ): Promise<any> {
-    if (target instanceof Cascade)
-      return Cascade.resolve(target).pipe((target) =>
+  ): Promise<{ value: any; isResponseFromAction: boolean }> {
+    if (target instanceof Cascade) {
+      const result = target.pipe((target) =>
         this.resolve(client, target, path, params, _debugPath)
       );
+      // Get metadata from cascade
+      const { isResponseFromAction } = await result.get();
+      return {
+        value: result.pipe((result) => result.value),
+        isResponseFromAction,
+      };
+    }
 
     const isObject = target && typeof target === "object";
     const isFunction = typeof target === "function";
 
     // Check permissions
     if (isObject || isFunction) {
-      const { policy } = getPackOptions(target);
+      const { policy } = getRestateMetadata(target);
       const clientHasAccess = await Cascade.resolve(
         policy(client, target)
       ).get();
@@ -85,7 +93,7 @@ export class RestateServer {
 
     if (path.length === 0) {
       // Fully resolved. Return target
-      return target;
+      return { value: target, isResponseFromAction: false };
     }
 
     // Parse remaining path
@@ -101,9 +109,12 @@ export class RestateServer {
         );
       }
 
-      // Check access
-      const { policy, clientIn, isGetter } = getPackOptions(target, key);
+      const { policy, clientIn, isView, isAction } = getRestateMetadata(
+        target,
+        key
+      );
 
+      // Check access
       const clientHasAccess = await Cascade.resolve(
         policy(client, target, key)
       ).get();
@@ -114,7 +125,7 @@ export class RestateServer {
       // Resolve next piece
       let nextTarget = target[key];
       if (typeof nextTarget === "function") {
-        if (isGetter) {
+        if (isView) {
           // If next target is a getter, evalute and continue resolving
           nextTarget = await target[key](client);
         } else if (path.length === 1) {
@@ -130,7 +141,10 @@ export class RestateServer {
           }
 
           try {
-            return await target[key](...params);
+            return {
+              value: await target[key](...params),
+              isResponseFromAction: isAction,
+            };
           } catch (e) {
             if (e instanceof TypeError) {
               // We may have tried to invoke a non-callable constructor
@@ -247,24 +261,22 @@ export class RestateServer {
       // Use sockets to stream data if result is Cascade
       const socketId = req.query[SOCKET_ID_KEY];
       if (typeof socketId === "string") {
-        const packed = pack(client, result);
+        const packed = pack(client, result.value);
 
         // Get the first value
-        const next = await packed.get();
+        const first = await packed.get();
 
-        if (result instanceof Cascade || Object.values(next.refs).length) {
-          // Open a pipe to socket if result is volatile or has refs that can change
+        if (result.value instanceof Cascade && !result.isResponseFromAction) {
           const pipe = this.pipeToSocket(req, packed);
           res.send({
             [KW_CASCADE_ID]: pipe.cascadeId,
-            [KW_VALUE]: next,
+            [KW_VALUE]: first,
           });
         } else {
-          // Otherwise, just send the data once and close
           packed.close();
           res.send({
             [KW_CASCADE_ID]: null,
-            [KW_VALUE]: next,
+            [KW_VALUE]: first,
           });
         }
       } else {

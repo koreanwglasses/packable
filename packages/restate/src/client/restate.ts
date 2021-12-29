@@ -1,4 +1,4 @@
-import { Cascade, Managed, Unwrapped } from "@koreanwglasses/cascade";
+import { Cascade, Managed } from "@koreanwglasses/cascade";
 import { io, Socket } from "socket.io-client";
 import jsonpatch from "fast-json-patch";
 import hash from "object-hash";
@@ -13,13 +13,13 @@ import {
   KW_CASCADE_ID,
   KW_RESEND,
   KW_CLOSE_FROM_SERVER,
-} from "../core/lib/consts";
+} from "../core/consts";
 import { FetchError } from "./errors";
-import { Packed, unpack, Unpacked } from "../core";
+import { Packed, Unpacked } from "../core/types";
 import { join } from "../core/lib/join";
 import fetch from "isomorphic-unfetch";
 import "colors";
-
+import { unpack } from "../core/unpack";
 export interface RestateClientOpts {
   socket?: Socket;
   resourcePath?: string;
@@ -62,52 +62,23 @@ export default function RestateClient(
   });
 
   // Fetches packed data from server
-  const remote = (
-    path: string,
-    params: any[],
-    { subscribe = true }: { subscribe?: boolean } = {}
-  ) => {
-    let url = path.startsWith("/") ? join(host, path) : path;
-
-    // Add query params
-    if (!url.includes("?")) url += "?";
-    else if (!url.endsWith("&")) url += "&";
-    url += `params=${encodeURIComponent(JSON.stringify(params))}`;
-    const { pathname } = new URL(url, "http://localhost");
-
-    if (!subscribe) {
-      // If subscribe is false (e.g. for calling an action) then
-      // do a simple fetch
-
-      return (async () => {
-        try {
-          const response = await fetch(url, init);
-          if (!response.ok)
-            throw new FetchError(response.statusText, await response.text());
-
-          let retval: any;
-          try {
-            retval = await response.clone().json();
-          } catch {
-            retval = await response.text();
-          }
-
-          debug(`> Received response from ${pathname.yellow}:`, retval);
-        } catch (e) {
-          console.error("Could not fetch --", e);
-          throw e;
-        }
-      })();
-    }
-
-    // subscribe === true
+  const remote = (path: string, ...params: any[]) => {
     return Cascade.resolve(connect)
       .pipe(async () => {
+        let url = path.startsWith("/") ? join(host, path) : path;
+
+        // Add query params
+        if (!url.includes("?")) url += "?";
+        else if (!url.endsWith("&")) url += "&";
+        url += `params=${encodeURIComponent(
+          JSON.stringify(params)
+        )}&${SOCKET_ID_KEY}=${socket.id}`;
+
+        const { pathname } = new URL(url, "http://localhost");
         debug(`> Sending request to ${pathname.yellow}`);
 
+        // fetch
         try {
-          // Append socket id to query
-          url += `&${SOCKET_ID_KEY}=${socket.id}`;
           const response = await fetch(url, init);
           if (!response.ok)
             throw new FetchError(response.statusText, await response.text());
@@ -121,15 +92,15 @@ export default function RestateClient(
             } from ${pathname.yellow}`
           );
 
-          return Cascade.all([cascadeId, value] as const);
+          return Cascade.all([cascadeId, value, pathname] as const);
         } catch (e) {
           console.error("Could not fetch --", e);
           throw e;
         }
       })
-      .pipe(([cascadeId, value]) => {
+      .pipe(([cascadeId, value, pathname]) => {
         // Static value
-        if (!cascadeId) return value;
+        if (!cascadeId) return Cascade.all([value, pathname] as const);
 
         // Set up a managed cascade and listen to socket events
         const packed = new Managed<Packed>(value);
@@ -185,9 +156,9 @@ export default function RestateClient(
           debug(`> Cascade from ${pathname.yellow} closed`);
         });
 
-        return packed;
+        return Cascade.all([packed, pathname] as const);
       })
-      .pipe((packed) => {
+      .pipe(([packed, pathname]) => {
         debug(`> Packed response from ${pathname.yellow}\n`, packed);
         return packed as Packed;
       });
@@ -195,8 +166,12 @@ export default function RestateClient(
 
   // Fetch + unpack (i.e. hydrate) data
   const resolve = <T>(path: string, ...params: any[]): Cascade<Unpacked<T>> =>
-    (remote(path, params, { subscribe: true }) as Cascade<Packed>).pipe(
-      (packed) => unpack<T>(path, packed, remote),
+    remote(path, ...params).pipe(
+      (packed) => {
+        const result = unpack<T>(path, packed, remote);
+        debug("> Unpacked\n", result);
+        return result;
+      },
       {
         notify: "always",
       }

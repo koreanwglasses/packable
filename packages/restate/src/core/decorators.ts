@@ -1,65 +1,35 @@
 import { Policy } from ".";
-import { getRestateMeta } from "./metadata";
+import { getOwnRestateMetadata } from "./metadata";
 
-export function include(
-  target: any,
-  key: string,
-  descriptor?: PropertyDescriptor
-) {
+export function pack(target: any, key: string) {
+  const descriptor = Reflect.getOwnPropertyDescriptor(target, key);
   if (descriptor) descriptor.enumerable = true;
 
-  const properties = (getRestateMeta(target).properties ??= {});
-  properties[key] ??= {};
+  getOwnRestateMetadata(target, key).pack = true;
 }
 
 export function policy(policy: Policy<any>) {
-  return function (
-    target: any,
-    key?: string,
-    descriptor?: PropertyDescriptor
-  ) {
+  return function (target: any, key?: string) {
     if (key) {
-      // Define field policy
-      if (descriptor) descriptor.enumerable = true;
-
-      const properties = (getRestateMeta(target).properties ??= {});
-      const options = (properties[key] ??= {});
-      options.policy = policy;
+      pack(target, key);
+      getOwnRestateMetadata(target, key).policy = policy;
     } else {
-      getRestateMeta(target.prototype).policy = policy;
+      getOwnRestateMetadata(target.prototype).policy = policy;
     }
   };
 }
 
-export function getter(
-  target: any,
-  key: string,
-  descriptor?: PropertyDescriptor
-) {
-  if (descriptor) descriptor.enumerable = true;
-
-  const properties = (getRestateMeta(target).properties ??= {});
-  const options = properties[key] ??= {};
-  options.isGetter = true;
+export function view(target: any, key: string) {
+  pack(target, key);
+  getOwnRestateMetadata(target, key).isView = true;
 }
 
-export function action(
-  target: any,
-  key: string,
-  descriptor?: PropertyDescriptor
-) {
-  if (descriptor) descriptor.enumerable = true;
-
-  const properties = (getRestateMeta(target).properties ??= {});
-  const options = properties[key] ??= {};
-  options.isAction = true;
+export function action(target: any, key: string) {
+  pack(target, key);
+  getOwnRestateMetadata(target, key).isAction = true;
 }
 
 export function clientIn(target: any, key: string, i: number) {
-  const descriptor = Reflect.getOwnPropertyDescriptor(target, key);
-  if (descriptor) descriptor.enumerable = true;
-
-  const properties = (getRestateMeta(target).properties ??= {});
-  const options = (properties[key] ??= {});
-  options.clientIn = i;
+  pack(target, key);
+  getOwnRestateMetadata(target, key).clientIn = i;
 }

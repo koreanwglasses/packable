@@ -3,7 +3,7 @@ import { User } from "./user";
 import { Cascade } from "@koreanwglasses/cascade";
 import mongoose from "mongoose";
 import { model, MongoRestate } from "./lib/mongo-helper";
-import { action, Client, clientIn, getter } from "@koreanwglasses/restate";
+import { action, Client, clientIn, view } from "@koreanwglasses/restate";
 
 type RoomData = {
   hostId: string;
@@ -45,8 +45,8 @@ export class Room extends MongoRestate<RoomData> {
    * directly
    */
 
-  @getter
-  players(@clientIn client: Client) {
+  @view
+  players(client: Client) {
     return Cascade.all([
       User._getCurrentUser(client),
       User._getUsersInRoom(this._id),
@@ -68,12 +68,14 @@ export class Room extends MongoRestate<RoomData> {
    * These actions explicitly invalidate any fields or base queries that may be affected
    */
 
+  @action
   static async _init() {
     const room = new Room._model({ joinCode: await generateRoomCode() });
     await room.save();
     return new Room(String(room._id));
   }
 
+  @action
   async _setHost(hostId?: string) {
     await Room._model.findByIdAndUpdate(this._id, { hostId }).exec();
     this._data.invalidate();
@@ -104,8 +106,8 @@ export class Room extends MongoRestate<RoomData> {
    */
 
   @action
-  static async join(@clientIn client: Client, joinCode: string) {
-    const user = await User._getCurrentUser(client).get();
+  static async join(joinCode: string, @clientIn client?: Client) {
+    const user = await User._getCurrentUser(client!);
     const [roomId] = await Room._model
       .findOne({ joinCode })
       .distinct("_id")
@@ -115,8 +117,8 @@ export class Room extends MongoRestate<RoomData> {
   }
 
   @action
-  static async create(@clientIn client: Client) {
-    const user = await User._getCurrentUser(client).get();
+  static async create(@clientIn client?: Client) {
+    const user = await User._getCurrentUser(client!);
     const room = await Room._init();
 
     await room._setHost(user._id);

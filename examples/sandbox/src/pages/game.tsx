@@ -77,7 +77,7 @@ const GameView = () => {
           cards={myCards}
           onReorder={(cards) => {
             setMyCards(cards);
-            state.game?.reorderMyCards(null, cards);
+            state.game?.reorderMyCards(cards);
           }}
         />
       </RFlex>

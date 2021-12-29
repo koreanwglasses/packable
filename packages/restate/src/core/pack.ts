@@ -1,19 +1,15 @@
 import { Cascade } from "@koreanwglasses/cascade";
-import { nanoid } from "nanoid";
 import { stripUndefined } from "./lib/strip-undefined";
-import { Client, Packed } from "./lib/types";
-import { getKeysToPack, getPackOptions, getRestateMeta } from "./metadata";
+import { Client, Packed, Ref } from "./types";
+import { getKeysToPack, getRefId, getRestateMetadata } from "./metadata";
 
-const getRefId = (target: any) =>
-  (getRestateMeta(target).__ref_id ??= nanoid());
+type Refs = Record<string, Ref>;
 
-type Refs = Record<string, unknown>;
-
+/** @internal */
 export const pack = (
   client: Client,
   target: any,
-  _refs: Refs = {}, // Internal, used for keeping track of refs when recursing
-  _isAction = false // Internal, used to keep track of decorated functions
+  _refs: Refs = {} // Internal, used for keeping track of refs when recursing
 ): Cascade<Packed> => {
   return Cascade.resolve(target)
     .pipe((target) => {
@@ -22,7 +18,7 @@ export const pack = (
         (typeof target === "object" || typeof target === "function")
       ) {
         // Check if client has access to object
-        const { policy } = getPackOptions(target);
+        const { policy } = getRestateMetadata(target);
         return Cascade.resolve(policy(client, target)).pipe((clientHasAccess) =>
           clientHasAccess ? target : undefined
         );
@@ -64,7 +60,7 @@ export const pack = (
         let packed = Cascade.all([{}, { ..._refs, [__ref_id]: {} }] as const);
 
         for (const key of getKeysToPack(target)) {
-          const { policy, isGetter, isAction } = getPackOptions(target, key);
+          const { policy, isView } = getRestateMetadata(target, key);
 
           packed = packed
             .pipeAll(
@@ -75,15 +71,11 @@ export const pack = (
             .pipeAll(([result, refs, clientHasAccess]) => {
               if (!clientHasAccess) return [result, refs, undefined];
 
-              return [
-                result,
-                refs,
-                isGetter ? target[key](client) : target[key],
-              ];
+              return [result, refs, isView ? target[key](client) : target[key]];
             })
             .pipeAll(
               ([result, refs, value]) =>
-                [result, pack(client, value, refs, isAction)] as const
+                [result, pack(client, value, refs)] as const
             )
             .pipeAll(([result, packed]) => [
               { ...result, [key]: packed.result },
@@ -95,14 +87,10 @@ export const pack = (
           result: { __ref_id },
           refs: {
             ...refs,
-            [__ref_id]:
-              typeof target === "function"
-                ? {
-                    __isCallable: true,
-                    __isAction: _isAction,
-                    properties: result,
-                  }
-                : result,
+            [__ref_id]: {
+              isCallable: typeof target === "function",
+              properties: result,
+            },
           },
         }));
       } else {

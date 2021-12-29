@@ -107,6 +107,7 @@ const SelectRoom = () => {
         action={({ joinCode }) =>
           restate.resolve("/api/room/join", joinCode).get({ keepAlive: false })
         }
+        onSuccess={() => setIndex(2)}
         allowRepeats
       >
         <RFlex gap={1}>
@@ -126,6 +127,7 @@ const SelectRoom = () => {
         action={() =>
           restate.resolve("/api/room/create").get({ keepAlive: false })
         }
+        onSuccess={() => setIndex(2)}
         allowRepeats
       >
         <Button variant="outlined" type="submit">

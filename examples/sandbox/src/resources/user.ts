@@ -1,8 +1,7 @@
 import { Cascade } from "@koreanwglasses/cascade";
-import { Client, action } from "@koreanwglasses/restate";
+import { Client, action, pack } from "@koreanwglasses/restate";
 import mongoose from "mongoose";
 import { model, MongoRestate } from "./lib/mongo-helper";
-import { Session } from "./session";
 
 type UserData = {
   id: string;
@@ -65,17 +64,14 @@ export class User extends MongoRestate<UserData> {
     ));
   }
 
-  static _getCurrentUser(client: Client) {
-    const session = new Session(client.sid);
-    return session._session.pipe(async ({ userId }) => {
-      if (!userId) {
-        const user = await User._init();
-        await session._update({ userId: user._id });
-        return user;
-      }
+  static async _getCurrentUser(client: Client) {
+    if (!client.session.userId) {
+      const user = await User._init();
+      client.session.userId = user._id;
+      return user;
+    }
 
-      return new User(userId);
-    });
+    return new User(client.session.userId);
   }
 
   /////////////////////
@@ -87,6 +83,7 @@ export class User extends MongoRestate<UserData> {
    * directly
    */
 
+  @pack
   get isConnected() {
     return this._lastDisconnect.pipe((lastDisconnect) => !lastDisconnect);
   }
@@ -99,6 +96,7 @@ export class User extends MongoRestate<UserData> {
    * These actions explicitly invalidate any fields or base queries that may be affected
    */
 
+  @action
   static async _init() {
     const user = new User._model();
     await user.save();
@@ -106,6 +104,7 @@ export class User extends MongoRestate<UserData> {
     return new User(String(user._id));
   }
 
+  @action
   async _setRoom(roomId: string | null) {
     const { roomId: prevRoomId } = (await User._model
       .findByIdAndUpdate(this._id, { roomId })
@@ -116,6 +115,7 @@ export class User extends MongoRestate<UserData> {
     if (prevRoomId) User._getUsersInRoom(prevRoomId).invalidate();
   }
 
+  @action
   async _reconnect() {
     await User._model
       .findByIdAndUpdate(this._id, {
@@ -125,12 +125,14 @@ export class User extends MongoRestate<UserData> {
     this._data.invalidate();
   }
 
+  @action
   async _disconnect(lastDisconnect: number) {
     await User._model
       .findByIdAndUpdate(this._id, {
         lastDisconnect,
       })
       .exec();
+
     this._data.invalidate();
 
     // Follow-up and disconnect from room/game if timed out

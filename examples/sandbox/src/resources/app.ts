@@ -1,4 +1,5 @@
-import { Client, clientIn, getter, Got } from "@koreanwglasses/restate";
+import { Cascade } from "@koreanwglasses/cascade";
+import { Client, view, WithViews } from "@koreanwglasses/restate";
 import { Game } from "./game";
 import { Room } from "./room";
 import { User } from "./user";
@@ -9,8 +10,8 @@ import { User } from "./user";
 
 export type AppState = {
   user: User;
-  room: Got<Room, "players"> | null;
-  game: Got<Game, "players" | "myCards"> | null;
+  room: WithViews<Room, "players"> | null;
+  game: WithViews<Game, "players" | "myCards"> | null;
 };
 
 //////////////////////
@@ -18,9 +19,9 @@ export type AppState = {
 //////////////////////
 
 export class App {
-  @getter
-  static state(@clientIn client: Client) {
-    return User._getCurrentUser(client)
+  @view
+  static state(client: Client) {
+    return Cascade.resolve(User._getCurrentUser(client))
       .pipeAll((user) => [user, user._roomId] as const)
       .pipeAll(([user, roomId]) => {
         const room = typeof roomId === "string" ? new Room(roomId) : null;

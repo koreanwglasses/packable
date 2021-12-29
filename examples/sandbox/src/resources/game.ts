@@ -1,5 +1,5 @@
 import { Cascade } from "@koreanwglasses/cascade";
-import { Client, clientIn, getter } from "@koreanwglasses/restate";
+import { Client, clientIn, view, action } from "@koreanwglasses/restate";
 import { HTTPError } from "@koreanwglasses/restate/server";
 import mongoose from "mongoose";
 import { model, MongoRestate } from "./lib/mongo-helper";
@@ -70,8 +70,8 @@ export class Game extends MongoRestate<GameData> {
   // DYNAMIC QUERIES //
   /////////////////////
 
-  @getter
-  players(@clientIn client: Client) {
+  @view
+  players(client: Client) {
     return Cascade.all([
       User._getCurrentUser(client),
       this._players,
@@ -87,9 +87,12 @@ export class Game extends MongoRestate<GameData> {
     );
   }
 
-  @getter
-  myCards(@clientIn client: Client) {
-    return Cascade.all([User._getCurrentUser(client), this._players] as const).pipe(
+  @view
+  myCards(client: Client) {
+    return Cascade.all([
+      User._getCurrentUser(client),
+      this._players,
+    ] as const).pipe(
       ([currentUser, players]) =>
         players.find((player) => player.id === currentUser._id)!.cards
     );
@@ -99,6 +102,7 @@ export class Game extends MongoRestate<GameData> {
   // BASE ACTIONS //
   //////////////////
 
+  @action
   static async _init(playerIds: string[]) {
     const hands = deal();
 
@@ -109,8 +113,9 @@ export class Game extends MongoRestate<GameData> {
     return new Game(String(game._id));
   }
 
-  async reorderMyCards(@clientIn client: Client | null, cards: Card[]) {
-    const currentUser = await User._getCurrentUser(client!).get();
+  @action
+  async reorderMyCards(cards: Card[], @clientIn client?: Client) {
+    const currentUser = await User._getCurrentUser(client!);
 
     const game = await Game._model.findById(this._id).exec();
     if (!game) throw new HTTPError(404);

@@ -29,7 +29,7 @@ export function useResolve<T>(path: string, ...params: any[]): ResolveState<T> {
       .pipe((result) => setState({ result, loading: false }))
       .catch((error) => setState({ error, loading: false }));
     return () => {
-      cascade.close();
+      cascade.closedBy();
     };
   }, [restate, _params.current, ...dependencies]);
 

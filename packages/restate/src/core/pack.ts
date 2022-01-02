@@ -57,39 +57,51 @@ export const pack = (
             refs: _refs,
           };
 
-        let packed = Cascade.all([{}, { ..._refs, [__ref_id]: {} }] as const);
+        let packed = Cascade.all([
+          {},
+          { ..._refs, [__ref_id]: {} },
+          false,
+        ] as const);
 
         for (const key of getKeysToPack(target)) {
           const { policy, isView } = getRestateMetadata(target, key);
 
           packed = packed
             .pipeAll(
-              ([result, refs]) =>
+              ([result, refs, isCascade]) =>
                 // Check permissions
-                [result, refs, policy(client, target, key)] as const
+                [result, refs, isCascade, policy(client, target, key)] as const
             )
-            .pipeAll(([result, refs, clientHasAccess]) => {
+            .pipeAll(([result, refs, isCascade, clientHasAccess]) => {
               if (!clientHasAccess) return [result, refs, undefined];
 
-              return [result, refs, isView ? target[key](client) : target[key]];
+              const value = isView ? target[key](client) : target[key];
+              return [
+                result,
+                refs,
+                isCascade || value instanceof Cascade,
+                value,
+              ];
             })
             .pipeAll(
-              ([result, refs, value]) =>
-                [result, pack(client, value, refs)] as const
+              ([result, refs, isCascade, value]) =>
+                [result, pack(client, value, refs), isCascade] as const
             )
-            .pipeAll(([result, packed]) => [
+            .pipeAll(([result, packed, isCascade]) => [
               { ...result, [key]: packed.result },
               packed.refs,
+              isCascade,
             ]);
         }
 
-        return packed.pipe(([result, refs]) => ({
+        return packed.pipe(([result, refs, isCascade]) => ({
           result: { __ref_id },
           refs: {
             ...refs,
             [__ref_id]: {
               isCallable: typeof target === "function",
               properties: result,
+              isCascade,
             },
           },
         }));

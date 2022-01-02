@@ -65,11 +65,12 @@ export type Ref = ObjectRef | CallableRef;
 export interface ObjectRef {
   isCallable?: false;
   properties: Record<any, unknown>;
+  isCascade: boolean;
 }
 
 /** @internal */
 export interface CallableRef {
   isCallable: true;
   properties: Record<any, unknown>;
+  isCascade: boolean;
 }
-

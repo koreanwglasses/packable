@@ -4,7 +4,6 @@
     "build-all": "yarn workspaces "
   },
   "workspaces": [
-    "examples/*",
     "packages/*"
   ]
 }

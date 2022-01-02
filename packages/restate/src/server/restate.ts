@@ -1,4 +1,6 @@
 import { Cascade } from "@koreanwglasses/cascade";
+// import "@koreanwglasses/cascade/debug";
+
 import asyncHandler from "express-async-handler";
 import express, { Request, Response, Router } from "express";
 import { Server, Namespace } from "socket.io";
@@ -266,7 +268,10 @@ export class RestateServer {
         // Get the first value
         const first = await packed.get();
 
-        if (result.value instanceof Cascade && !result.isResponseFromAction) {
+        if (
+          Object.values(first.refs).find((ref) => ref.isCascade) &&
+          !result.isResponseFromAction
+        ) {
           const pipe = this.pipeToSocket(req, packed);
           res.send({
             [KW_CASCADE_ID]: pipe.cascadeId,

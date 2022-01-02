@@ -166,16 +166,15 @@ export default function RestateClient(
 
   // Fetch + unpack (i.e. hydrate) data
   const resolve = <T>(path: string, ...params: any[]): Cascade<Unpacked<T>> =>
-    remote(path, ...params).pipe(
-      (packed) => {
-        const result = unpack<T>(path, packed, remote);
-        debug("> Unpacked\n", result);
-        return result;
-      },
-      {
-        notify: "always",
-      }
-    ) as any;
+    remote(path, ...params)
+      .pipe(
+        (packed) => unpack<T>(path, packed, remote),
+
+        {
+          notify: "always",
+        }
+      )
+      .tap((value) => debug("> Unpacked\n", value)) as any;
 
   return { resolve };
 }

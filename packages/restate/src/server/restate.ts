@@ -1,5 +1,4 @@
 import { Cascade } from "@koreanwglasses/cascade";
-// import "@koreanwglasses/cascade/debug";
 
 import asyncHandler from "express-async-handler";
 import express, { Request, Response, Router } from "express";
@@ -27,6 +26,9 @@ import "colors";
 import { pack } from "../core/pack";
 
 const DEV = process.env.NODE_ENV === "development";
+if (DEV) {
+  require("@koreanwglasses/cascade/debug");
+}
 
 const debug = (...args: any) => {
   if (DEV) console.log(...args);
@@ -269,7 +271,8 @@ export class RestateServer {
         const first = await packed.get();
 
         if (
-          Object.values(first.refs).find((ref) => ref.isCascade) &&
+          (result.value instanceof Cascade ||
+            Object.values(first.refs).find((ref) => ref.isCascade)) &&
           !result.isResponseFromAction
         ) {
           const pipe = this.pipeToSocket(req, packed);
